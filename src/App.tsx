@@ -19,6 +19,8 @@ function App() {
   const [isOpenCVReady, setIsOpenCVReady] = useState(false);
   const [matchResults, setMatchResults] = useState<any>(null);
   const [isProcessing, setIsProcessing] = useState(false);
+  const [matchThreshold, setMatchThreshold] = useState(0.7);
+  const [matchMethod, setMatchMethod] = useState(5); // TM_CCOEFF_NORMED
 
   useEffect(() => {
     // Check if OpenCV is already loaded or being loaded
@@ -173,7 +175,7 @@ function App() {
             
             // Perform template matching
             const result = new window.cv.Mat();
-            window.cv.matchTemplate(srcGray, templGray, result, window.cv.TM_CCOEFF_NORMED);
+            window.cv.matchTemplate(srcGray, templGray, result, matchMethod);
             
             // Find the best match location
             const minMaxLoc = window.cv.minMaxLoc(result);
@@ -183,10 +185,7 @@ function App() {
             console.log('Match confidence:', matchValue);
             console.log('Match location:', maxLoc);
             
-            // Set threshold for good match (adjust as needed)
-            const threshold = 0.7;
-            
-            if (matchValue > threshold) {
+            if (matchValue > matchThreshold) {
               setMatchResults({
                 processed: true,
                 found: true,
@@ -201,7 +200,7 @@ function App() {
                 processed: true,
                 found: false,
                 confidence: (matchValue * 100).toFixed(2),
-                message: `Template not found. Best match: ${(matchValue * 100).toFixed(2)}% confidence (threshold: ${threshold * 100}%)`,
+                message: `Template not found. Best match: ${(matchValue * 100).toFixed(2)}% confidence (threshold: ${matchThreshold * 100}%)`,
                 imageSize: { width: src.cols, height: src.rows }
               });
             }
@@ -383,6 +382,71 @@ function App() {
               </div>
             </div>
           </div>
+
+          {/* Template Thumbnail */}
+          {templateImage && (
+            <div className="mb-6">
+              <h3 className="text-sm font-medium text-gray-700 mb-2">Template Image</h3>
+              <div className="flex justify-center">
+                <img
+                  src={templateImage}
+                  alt="Template"
+                  className="max-w-32 max-h-32 object-contain border border-gray-300 rounded-lg shadow-sm"
+                />
+              </div>
+            </div>
+          )}
+
+          {/* OpenCV Parameters */}
+          {templateImage && (
+            <div className="mb-6 bg-gray-50 rounded-lg p-4">
+              <h3 className="text-sm font-medium text-gray-700 mb-4">Template Matching Parameters</h3>
+              
+              <div className="space-y-4">
+                {/* Match Threshold Slider */}
+                <div>
+                  <label className="block text-sm text-gray-600 mb-2">
+                    Match Threshold: {(matchThreshold * 100).toFixed(0)}%
+                  </label>
+                  <input
+                    type="range"
+                    min="0.1"
+                    max="1.0"
+                    step="0.05"
+                    value={matchThreshold}
+                    onChange={(e) => setMatchThreshold(parseFloat(e.target.value))}
+                    className="w-full h-2 bg-gray-200 rounded-lg appearance-none cursor-pointer slider"
+                  />
+                  <div className="flex justify-between text-xs text-gray-500 mt-1">
+                    <span>10%</span>
+                    <span>100%</span>
+                  </div>
+                </div>
+
+                {/* Match Method Selector */}
+                <div>
+                  <label className="block text-sm text-gray-600 mb-2">
+                    Matching Method
+                  </label>
+                  <select
+                    value={matchMethod}
+                    onChange={(e) => setMatchMethod(parseInt(e.target.value))}
+                    className="w-full px-3 py-2 border border-gray-300 rounded-lg focus:outline-none focus:ring-2 focus:ring-blue-500 focus:border-transparent"
+                  >
+                    <option value={0}>TM_SQDIFF</option>
+                    <option value={1}>TM_SQDIFF_NORMED</option>
+                    <option value={2}>TM_CCORR</option>
+                    <option value={3}>TM_CCORR_NORMED</option>
+                    <option value={4}>TM_CCOEFF</option>
+                    <option value={5}>TM_CCOEFF_NORMED (Recommended)</option>
+                  </select>
+                  <p className="text-xs text-gray-500 mt-1">
+                    TM_CCOEFF_NORMED is recommended for most use cases
+                  </p>
+                </div>
+              </div>
+            </div>
+          )}
 
           {/* Results Display */}
           {matchResults && (
