@@ -1,0 +1,343 @@
+import React, { useRef, useState, useEffect } from 'react';
+import { Camera, RefreshCcw, FlipHorizontal, Upload, Search } from 'lucide-react';
+
+declare global {
+  interface Window {
+    cv: any;
+  }
+}
+
+function App() {
+  const videoRef = useRef<HTMLVideoElement>(null);
+  const canvasRef = useRef<HTMLCanvasElement>(null);
+  const fileInputRef = useRef<HTMLInputElement>(null);
+  const [image, setImage] = useState<string | null>(null);
+  const [cameraActive, setCameraActive] = useState(false);
+  const [isRearCamera, setIsRearCamera] = useState(false);
+  const [isOpenCVReady, setIsOpenCVReady] = useState(false);
+  const [matchResults, setMatchResults] = useState<any>(null);
+  const [isProcessing, setIsProcessing] = useState(false);
+
+  useEffect(() => {
+    // Check if OpenCV is already loaded or being loaded
+    if (window.cv || document.querySelector('script[src*="opencv.js"]')) {
+      if (window.cv && window.cv.Mat) {
+        setIsOpenCVReady(true);
+      }
+      return;
+    }
+
+    // Load OpenCV.js
+    const script = document.createElement('script');
+    script.src = 'https://docs.opencv.org/4.x/opencv.js';
+    script.async = true;
+    script.onload = () => {
+      // Wait for OpenCV to be ready
+      const checkOpenCV = () => {
+        if (window.cv && window.cv.Mat) {
+          setIsOpenCVReady(true);
+          console.log('OpenCV.js is ready');
+        } else {
+          setTimeout(checkOpenCV, 100);
+        }
+      };
+      checkOpenCV();
+    };
+    document.head.appendChild(script);
+  }, []);
+
+  const startCamera = async () => {
+    try {
+      // Stop any existing stream
+      if (videoRef.current?.srcObject) {
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream.getTracks().forEach(track => track.stop());
+      }
+
+      const stream = await navigator.mediaDevices.getUserMedia({ 
+        video: { 
+          facingMode: isRearCamera ? 'environment' : 'user'
+        }
+      });
+      if (videoRef.current) {
+        videoRef.current.srcObject = stream;
+        setCameraActive(true);
+      }
+    } catch (err) {
+      console.error("Error accessing camera:", err);
+      alert("Unable to access camera. Please ensure you have granted camera permissions.");
+    }
+  };
+
+  const switchCamera = () => {
+    setIsRearCamera(!isRearCamera);
+    startCamera();
+  };
+
+  const takePicture = () => {
+    if (videoRef.current) {
+      const canvas = document.createElement('canvas');
+      canvas.width = videoRef.current.videoWidth;
+      canvas.height = videoRef.current.videoHeight;
+      const ctx = canvas.getContext('2d');
+      
+      if (ctx) {
+        ctx.drawImage(videoRef.current, 0, 0);
+        const imageData = canvas.toDataURL('image/jpeg');
+        setImage(imageData);
+        
+        // Stop camera stream
+        const stream = videoRef.current.srcObject as MediaStream;
+        stream?.getTracks().forEach(track => track.stop());
+        setCameraActive(false);
+      }
+    }
+  };
+
+  const handleFileUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = e.target?.result as string;
+        setImage(result);
+        setCameraActive(false);
+        // Stop any active camera stream
+        if (videoRef.current?.srcObject) {
+          const stream = videoRef.current.srcObject as MediaStream;
+          stream.getTracks().forEach(track => track.stop());
+        }
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
+  const performTemplateMatching = async () => {
+    if (!image || !isOpenCVReady) {
+      alert('OpenCV is not ready or no image available');
+      return;
+    }
+
+    setIsProcessing(true);
+    setMatchResults(null);
+
+    try {
+      // Load the captured/uploaded image
+      const img = new Image();
+      img.onload = () => {
+        // Create canvas for processing
+        const canvas = document.createElement('canvas');
+        canvas.width = img.width;
+        canvas.height = img.height;
+        const ctx = canvas.getContext('2d');
+        ctx?.drawImage(img, 0, 0);
+
+        // Convert to OpenCV Mat
+        const src = window.cv.imread(canvas);
+        
+        // Load template image (you'll need to implement template loading)
+        // For now, we'll simulate the process
+        console.log('Processing image with OpenCV...');
+        console.log('Image dimensions:', src.rows, 'x', src.cols);
+        
+        // Convert to grayscale for template matching
+        const gray = new window.cv.Mat();
+        window.cv.cvtColor(src, gray, window.cv.COLOR_RGBA2GRAY);
+        
+        // Here you would load your template image and perform matching
+        // const template = window.cv.imread('template'); // You'll need to load the template
+        // const result = new window.cv.Mat();
+        // window.cv.matchTemplate(gray, template, result, window.cv.TM_CCOEFF_NORMED);
+        
+        // For demonstration, we'll show that the process is working
+        setMatchResults({
+          processed: true,
+          message: 'Template matching process initiated. Template image needs to be loaded for actual matching.',
+          imageSize: { width: src.cols, height: src.rows }
+        });
+
+        // Clean up
+        src.delete();
+        gray.delete();
+        setIsProcessing(false);
+      };
+      img.src = image;
+    } catch (error) {
+      console.error('Error in template matching:', error);
+      setMatchResults({
+        error: 'Error processing image: ' + error
+      });
+      setIsProcessing(false);
+    }
+  };
+
+  const retake = () => {
+    setImage(null);
+    setMatchResults(null);
+    startCamera();
+  };
+
+  const reset = () => {
+    setImage(null);
+    setMatchResults(null);
+    setCameraActive(false);
+    // Stop any active camera stream
+    if (videoRef.current?.srcObject) {
+      const stream = videoRef.current.srcObject as MediaStream;
+      stream.getTracks().forEach(track => track.stop());
+    }
+  };
+
+  return (
+    <div className="min-h-screen bg-gray-100 p-4">
+      <div className="max-w-2xl mx-auto bg-white rounded-xl shadow-md overflow-hidden">
+        <div className="p-6">
+          <div className="flex justify-between items-center mb-6">
+            <h1 className="text-3xl font-bold text-gray-800 flex items-center gap-2">
+              <Camera className="w-8 h-8" />
+              Fight Stats Analyzer
+            </h1>
+            {cameraActive && (
+              <button
+                onClick={switchCamera}
+                className="text-gray-600 hover:text-gray-800 p-2 rounded-full hover:bg-gray-100 transition-colors"
+                title={`Switch to ${isRearCamera ? 'front' : 'rear'} camera`}
+              >
+                <FlipHorizontal className="w-6 h-6" />
+              </button>
+            )}
+          </div>
+
+          <div className="relative aspect-video bg-black rounded-lg overflow-hidden mb-6">
+            {!image && (
+              <video
+                ref={videoRef}
+                autoPlay
+                playsInline
+                className="w-full h-full object-cover"
+              />
+            )}
+            {image && (
+              <img
+                src={image}
+                alt="Captured or uploaded"
+                className="w-full h-full object-cover"
+              />
+            )}
+            {!cameraActive && !image && (
+              <div className="absolute inset-0 flex items-center justify-center text-gray-400">
+                <div className="text-center">
+                  <Camera className="w-16 h-16 mx-auto mb-4 opacity-50" />
+                  <p>Take a photo or upload an image</p>
+                </div>
+              </div>
+            )}
+          </div>
+
+          {/* Control Buttons */}
+          <div className="flex flex-wrap justify-center gap-3 mb-6">
+            {!cameraActive && !image && (
+              <>
+                <button
+                  onClick={startCamera}
+                  className="bg-blue-500 text-white px-6 py-3 rounded-lg hover:bg-blue-600 flex items-center gap-2 transition-colors"
+                >
+                  <Camera className="w-5 h-5" />
+                  Start Camera
+                </button>
+                <button
+                  onClick={() => fileInputRef.current?.click()}
+                  className="bg-green-500 text-white px-6 py-3 rounded-lg hover:bg-green-600 flex items-center gap-2 transition-colors"
+                >
+                  <Upload className="w-5 h-5" />
+                  Upload Image
+                </button>
+              </>
+            )}
+            
+            {cameraActive && (
+              <button
+                onClick={takePicture}
+                className="bg-green-500 text-white px-6 py-3 rounded-lg hover:bg-green-600 flex items-center gap-2 transition-colors"
+              >
+                <Camera className="w-5 h-5" />
+                Take Picture
+              </button>
+            )}
+            
+            {image && (
+              <>
+                <button
+                  onClick={performTemplateMatching}
+                  disabled={!isOpenCVReady || isProcessing}
+                  className="bg-purple-500 text-white px-6 py-3 rounded-lg hover:bg-purple-600 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
+                >
+                  <Search className="w-5 h-5" />
+                  {isProcessing ? 'Processing...' : 'Analyze Fight Stats'}
+                </button>
+                <button
+                  onClick={retake}
+                  className="bg-orange-500 text-white px-6 py-3 rounded-lg hover:bg-orange-600 flex items-center gap-2 transition-colors"
+                >
+                  <RefreshCcw className="w-5 h-5" />
+                  Retake
+                </button>
+                <button
+                  onClick={reset}
+                  className="bg-gray-500 text-white px-6 py-3 rounded-lg hover:bg-gray-600 flex items-center gap-2 transition-colors"
+                >
+                  Reset
+                </button>
+              </>
+            )}
+          </div>
+
+          {/* OpenCV Status */}
+          <div className="mb-4">
+            <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm ${
+              isOpenCVReady ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+            }`}>
+              <div className={`w-2 h-2 rounded-full mr-2 ${
+                isOpenCVReady ? 'bg-green-500' : 'bg-yellow-500'
+              }`}></div>
+              OpenCV: {isOpenCVReady ? 'Ready' : 'Loading...'}
+            </div>
+          </div>
+
+          {/* Results Display */}
+          {matchResults && (
+            <div className="bg-gray-50 rounded-lg p-4">
+              <h3 className="text-lg font-semibold mb-2">Analysis Results</h3>
+              {matchResults.error ? (
+                <div className="text-red-600">{matchResults.error}</div>
+              ) : (
+                <div className="space-y-2">
+                  <p className="text-green-600">{matchResults.message}</p>
+                  {matchResults.imageSize && (
+                    <p className="text-sm text-gray-600">
+                      Image processed: {matchResults.imageSize.width} × {matchResults.imageSize.height} pixels
+                    </p>
+                  )}
+                </div>
+              )}
+            </div>
+          )}
+
+          {/* Hidden file input */}
+          <input
+            ref={fileInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleFileUpload}
+            className="hidden"
+          />
+
+          {/* Canvas for OpenCV processing */}
+          <canvas ref={canvasRef} className="hidden" />
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export default App;
