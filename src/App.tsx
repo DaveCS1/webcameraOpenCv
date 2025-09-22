@@ -11,7 +11,9 @@ function App() {
   const videoRef = useRef<HTMLVideoElement>(null);
   const canvasRef = useRef<HTMLCanvasElement>(null);
   const fileInputRef = useRef<HTMLInputElement>(null);
+  const templateInputRef = useRef<HTMLInputElement>(null);
   const [image, setImage] = useState<string | null>(null);
+  const [templateImage, setTemplateImage] = useState<string | null>(null);
   const [cameraActive, setCameraActive] = useState(false);
   const [isRearCamera, setIsRearCamera] = useState(false);
   const [isOpenCVReady, setIsOpenCVReady] = useState(false);
@@ -112,9 +114,21 @@ function App() {
     }
   };
 
+  const handleTemplateUpload = (event: React.ChangeEvent<HTMLInputElement>) => {
+    const file = event.target.files?.[0];
+    if (file && file.type.startsWith('image/')) {
+      const reader = new FileReader();
+      reader.onload = (e) => {
+        const result = e.target?.result as string;
+        setTemplateImage(result);
+      };
+      reader.readAsDataURL(file);
+    }
+  };
+
   const performTemplateMatching = async () => {
-    if (!image || !isOpenCVReady) {
-      alert('OpenCV is not ready or no image available');
+    if (!image || !isOpenCVReady || !templateImage) {
+      alert('OpenCV is not ready, no image available, or no template loaded');
       return;
     }
 
@@ -124,42 +138,90 @@ function App() {
     try {
       // Load the captured/uploaded image
       const img = new Image();
+      const template = new Image();
+      
       img.onload = () => {
-        // Create canvas for processing
-        const canvas = document.createElement('canvas');
-        canvas.width = img.width;
-        canvas.height = img.height;
-        const ctx = canvas.getContext('2d');
-        ctx?.drawImage(img, 0, 0);
+        template.onload = () => {
+          try {
+            // Create canvas for source image
+            const canvas = document.createElement('canvas');
+            canvas.width = img.width;
+            canvas.height = img.height;
+            const ctx = canvas.getContext('2d');
+            ctx?.drawImage(img, 0, 0);
 
-        // Convert to OpenCV Mat
-        const src = window.cv.imread(canvas);
-        
-        // Load template image (you'll need to implement template loading)
-        // For now, we'll simulate the process
-        console.log('Processing image with OpenCV...');
-        console.log('Image dimensions:', src.rows, 'x', src.cols);
-        
-        // Convert to grayscale for template matching
-        const gray = new window.cv.Mat();
-        window.cv.cvtColor(src, gray, window.cv.COLOR_RGBA2GRAY);
-        
-        // Here you would load your template image and perform matching
-        // const template = window.cv.imread('template'); // You'll need to load the template
-        // const result = new window.cv.Mat();
-        // window.cv.matchTemplate(gray, template, result, window.cv.TM_CCOEFF_NORMED);
-        
-        // For demonstration, we'll show that the process is working
-        setMatchResults({
-          processed: true,
-          message: 'Template matching process initiated. Template image needs to be loaded for actual matching.',
-          imageSize: { width: src.cols, height: src.rows }
-        });
+            // Create canvas for template image
+            const templateCanvas = document.createElement('canvas');
+            templateCanvas.width = template.width;
+            templateCanvas.height = template.height;
+            const templateCtx = templateCanvas.getContext('2d');
+            templateCtx?.drawImage(template, 0, 0);
 
-        // Clean up
-        src.delete();
-        gray.delete();
-        setIsProcessing(false);
+            // Convert to OpenCV Mat
+            const src = window.cv.imread(canvas);
+            const templ = window.cv.imread(templateCanvas);
+            
+            console.log('Processing image with OpenCV...');
+            console.log('Source dimensions:', src.rows, 'x', src.cols);
+            console.log('Template dimensions:', templ.rows, 'x', templ.cols);
+            
+            // Convert to grayscale for template matching
+            const srcGray = new window.cv.Mat();
+            const templGray = new window.cv.Mat();
+            window.cv.cvtColor(src, srcGray, window.cv.COLOR_RGBA2GRAY);
+            window.cv.cvtColor(templ, templGray, window.cv.COLOR_RGBA2GRAY);
+            
+            // Perform template matching
+            const result = new window.cv.Mat();
+            window.cv.matchTemplate(srcGray, templGray, result, window.cv.TM_CCOEFF_NORMED);
+            
+            // Find the best match location
+            const minMaxLoc = window.cv.minMaxLoc(result);
+            const maxLoc = minMaxLoc.maxLoc;
+            const matchValue = minMaxLoc.maxVal;
+            
+            console.log('Match confidence:', matchValue);
+            console.log('Match location:', maxLoc);
+            
+            // Set threshold for good match (adjust as needed)
+            const threshold = 0.7;
+            
+            if (matchValue > threshold) {
+              setMatchResults({
+                processed: true,
+                found: true,
+                confidence: (matchValue * 100).toFixed(2),
+                location: { x: maxLoc.x, y: maxLoc.y },
+                message: `Template found with ${(matchValue * 100).toFixed(2)}% confidence at position (${maxLoc.x}, ${maxLoc.y})`,
+                imageSize: { width: src.cols, height: src.rows },
+                templateSize: { width: templ.cols, height: templ.rows }
+              });
+            } else {
+              setMatchResults({
+                processed: true,
+                found: false,
+                confidence: (matchValue * 100).toFixed(2),
+                message: `Template not found. Best match: ${(matchValue * 100).toFixed(2)}% confidence (threshold: ${threshold * 100}%)`,
+                imageSize: { width: src.cols, height: src.rows }
+              });
+            }
+
+            // Clean up
+            src.delete();
+            templ.delete();
+            srcGray.delete();
+            templGray.delete();
+            result.delete();
+            setIsProcessing(false);
+          } catch (error) {
+            console.error('Error in template matching:', error);
+            setMatchResults({
+              error: 'Error processing template matching: ' + error
+            });
+            setIsProcessing(false);
+          }
+        };
+        template.src = templateImage;
       };
       img.src = image;
     } catch (error) {
@@ -179,6 +241,7 @@ function App() {
 
   const reset = () => {
     setImage(null);
+    setTemplateImage(null);
     setMatchResults(null);
     setCameraActive(false);
     // Stop any active camera stream
@@ -252,6 +315,13 @@ function App() {
                   <Upload className="w-5 h-5" />
                   Upload Image
                 </button>
+                <button
+                  onClick={() => templateInputRef.current?.click()}
+                  className="bg-purple-500 text-white px-6 py-3 rounded-lg hover:bg-purple-600 flex items-center gap-2 transition-colors"
+                >
+                  <Upload className="w-5 h-5" />
+                  Load Template
+                </button>
               </>
             )}
             
@@ -269,11 +339,11 @@ function App() {
               <>
                 <button
                   onClick={performTemplateMatching}
-                  disabled={!isOpenCVReady || isProcessing}
+                  disabled={!isOpenCVReady || isProcessing || !templateImage}
                   className="bg-purple-500 text-white px-6 py-3 rounded-lg hover:bg-purple-600 disabled:bg-gray-400 disabled:cursor-not-allowed flex items-center gap-2 transition-colors"
                 >
                   <Search className="w-5 h-5" />
-                  {isProcessing ? 'Processing...' : 'Analyze Fight Stats'}
+                  {isProcessing ? 'Processing...' : !templateImage ? 'Load Template First' : 'Analyze Fight Stats'}
                 </button>
                 <button
                   onClick={retake}
@@ -294,13 +364,23 @@ function App() {
 
           {/* OpenCV Status */}
           <div className="mb-4">
-            <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm ${
-              isOpenCVReady ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
-            }`}>
-              <div className={`w-2 h-2 rounded-full mr-2 ${
-                isOpenCVReady ? 'bg-green-500' : 'bg-yellow-500'
-              }`}></div>
-              OpenCV: {isOpenCVReady ? 'Ready' : 'Loading...'}
+            <div className="flex flex-wrap gap-2">
+              <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm ${
+                isOpenCVReady ? 'bg-green-100 text-green-800' : 'bg-yellow-100 text-yellow-800'
+              }`}>
+                <div className={`w-2 h-2 rounded-full mr-2 ${
+                  isOpenCVReady ? 'bg-green-500' : 'bg-yellow-500'
+                }`}></div>
+                OpenCV: {isOpenCVReady ? 'Ready' : 'Loading...'}
+              </div>
+              <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm ${
+                templateImage ? 'bg-green-100 text-green-800' : 'bg-gray-100 text-gray-800'
+              }`}>
+                <div className={`w-2 h-2 rounded-full mr-2 ${
+                  templateImage ? 'bg-green-500' : 'bg-gray-500'
+                }`}></div>
+                Template: {templateImage ? 'Loaded' : 'Not loaded'}
+              </div>
             </div>
           </div>
 
@@ -312,10 +392,27 @@ function App() {
                 <div className="text-red-600">{matchResults.error}</div>
               ) : (
                 <div className="space-y-2">
-                  <p className="text-green-600">{matchResults.message}</p>
+                  <p className={matchResults.found ? 'text-green-600' : 'text-orange-600'}>
+                    {matchResults.message}
+                  </p>
+                  {matchResults.confidence && (
+                    <p className="text-sm text-gray-600">
+                      Match confidence: {matchResults.confidence}%
+                    </p>
+                  )}
+                  {matchResults.location && (
+                    <p className="text-sm text-gray-600">
+                      Found at: ({matchResults.location.x}, {matchResults.location.y})
+                    </p>
+                  )}
                   {matchResults.imageSize && (
                     <p className="text-sm text-gray-600">
                       Image processed: {matchResults.imageSize.width} × {matchResults.imageSize.height} pixels
+                    </p>
+                  )}
+                  {matchResults.templateSize && (
+                    <p className="text-sm text-gray-600">
+                      Template size: {matchResults.templateSize.width} × {matchResults.templateSize.height} pixels
                     </p>
                   )}
                 </div>
@@ -329,6 +426,15 @@ function App() {
             type="file"
             accept="image/*"
             onChange={handleFileUpload}
+            className="hidden"
+          />
+
+          {/* Hidden template input */}
+          <input
+            ref={templateInputRef}
+            type="file"
+            accept="image/*"
+            onChange={handleTemplateUpload}
             className="hidden"
           />
 
