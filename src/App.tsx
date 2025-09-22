@@ -21,6 +21,7 @@ function App() {
   const [isProcessing, setIsProcessing] = useState(false);
   const [matchThreshold, setMatchThreshold] = useState(0.7);
   const [matchMethod, setMatchMethod] = useState(5); // TM_CCOEFF_NORMED
+  const [processedImageWithBoxes, setProcessedImageWithBoxes] = useState<string | null>(null);
 
   useEffect(() => {
     // Check if OpenCV is already loaded or being loaded
@@ -185,7 +186,30 @@ function App() {
             console.log('Match confidence:', matchValue);
             console.log('Match location:', maxLoc);
             
+            // Create a copy of the original image for drawing
+            const displayCanvas = document.createElement('canvas');
+            displayCanvas.width = img.width;
+            displayCanvas.height = img.height;
+            const displayCtx = displayCanvas.getContext('2d');
+            displayCtx?.drawImage(img, 0, 0);
+            
             if (matchValue > matchThreshold) {
+              // Draw bounding box on the image
+              if (displayCtx) {
+                displayCtx.strokeStyle = '#00ff00'; // Green color
+                displayCtx.lineWidth = 3;
+                displayCtx.strokeRect(maxLoc.x, maxLoc.y, templ.cols, templ.rows);
+                
+                // Add confidence text
+                displayCtx.fillStyle = '#00ff00';
+                displayCtx.font = '16px Arial';
+                displayCtx.fillText(
+                  `${(matchValue * 100).toFixed(1)}%`, 
+                  maxLoc.x, 
+                  maxLoc.y - 5
+                );
+              }
+              
               setMatchResults({
                 processed: true,
                 found: true,
@@ -196,6 +220,23 @@ function App() {
                 templateSize: { width: templ.cols, height: templ.rows }
               });
             } else {
+              // Still show the best match location with red box for debugging
+              if (displayCtx) {
+                displayCtx.strokeStyle = '#ff0000'; // Red color
+                displayCtx.lineWidth = 2;
+                displayCtx.setLineDash([5, 5]); // Dashed line
+                displayCtx.strokeRect(maxLoc.x, maxLoc.y, templ.cols, templ.rows);
+                
+                // Add confidence text
+                displayCtx.fillStyle = '#ff0000';
+                displayCtx.font = '14px Arial';
+                displayCtx.fillText(
+                  `${(matchValue * 100).toFixed(1)}%`, 
+                  maxLoc.x, 
+                  maxLoc.y - 5
+                );
+              }
+              
               setMatchResults({
                 processed: true,
                 found: false,
@@ -204,6 +245,9 @@ function App() {
                 imageSize: { width: src.cols, height: src.rows }
               });
             }
+
+            // Set the processed image with bounding boxes
+            setProcessedImageWithBoxes(displayCanvas.toDataURL('image/jpeg'));
 
             // Clean up
             src.delete();
@@ -235,6 +279,7 @@ function App() {
   const retake = () => {
     setImage(null);
     setMatchResults(null);
+    setProcessedImageWithBoxes(null);
     startCamera();
   };
 
@@ -242,6 +287,7 @@ function App() {
     setImage(null);
     setTemplateImage(null);
     setMatchResults(null);
+    setProcessedImageWithBoxes(null);
     setCameraActive(false);
     // Stop any active camera stream
     if (videoRef.current?.srcObject) {
@@ -279,10 +325,10 @@ function App() {
                 className="w-full h-full object-cover"
               />
             )}
-            {image && (
+            {(image || processedImageWithBoxes) && (
               <img
-                src={image}
-                alt="Captured or uploaded"
+                src={processedImageWithBoxes || image}
+                alt={processedImageWithBoxes ? "Processed with matches" : "Captured or uploaded"}
                 className="w-full h-full object-cover"
               />
             )}
@@ -477,6 +523,11 @@ function App() {
                   {matchResults.templateSize && (
                     <p className="text-sm text-gray-600">
                       Template size: {matchResults.templateSize.width} × {matchResults.templateSize.height} pixels
+                    </p>
+                  )}
+                  {processedImageWithBoxes && (
+                    <p className="text-sm text-blue-600 mt-2">
+                      ✓ Visual feedback shown on image above
                     </p>
                   )}
                 </div>
