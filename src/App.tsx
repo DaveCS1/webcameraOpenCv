@@ -22,6 +22,9 @@ function App() {
   const [matchThreshold, setMatchThreshold] = useState(0.7);
   const [matchMethod, setMatchMethod] = useState(5); // TM_CCOEFF_NORMED
   const [processedImageWithBoxes, setProcessedImageWithBoxes] = useState<string | null>(null);
+  const [liveEdgeDetection, setLiveEdgeDetection] = useState(false);
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
+  const animationFrameRef = useRef<number>();
 
   useEffect(() => {
     // Check if OpenCV is already loaded or being loaded
@@ -426,6 +429,16 @@ function App() {
                 }`}></div>
                 Template: {templateImage ? 'Loaded' : 'Not loaded'}
               </div>
+              {cameraActive && (
+                <div className={`inline-flex items-center px-3 py-1 rounded-full text-sm ${
+                  liveEdgeDetection ? 'bg-blue-100 text-blue-800' : 'bg-gray-100 text-gray-800'
+                }`}>
+                  <div className={`w-2 h-2 rounded-full mr-2 ${
+                    liveEdgeDetection ? 'bg-blue-500' : 'bg-gray-500'
+                  }`}></div>
+                  Live Detection: {liveEdgeDetection ? 'Active' : 'Inactive'}
+                </div>
+              )}
             </div>
           </div>
 
