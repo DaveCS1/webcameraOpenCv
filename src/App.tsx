@@ -22,6 +22,9 @@ function App() {
   const [matchThreshold, setMatchThreshold] = useState(0.7);
   const [matchMethod, setMatchMethod] = useState(5); // TM_CCOEFF_NORMED
   const [processedImageWithBoxes, setProcessedImageWithBoxes] = useState<string | null>(null);
+  const [liveEdgeDetection, setLiveEdgeDetection] = useState(false);
+  const overlayCanvasRef = useRef<HTMLCanvasElement>(null);
+  const animationFrameRef = useRef<number>();
 
   useEffect(() => {
     // Check if OpenCV is already loaded or being loaded
